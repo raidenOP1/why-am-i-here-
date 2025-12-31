@@ -39,13 +39,35 @@ const skipOnboardingBtn = document.getElementById('skipOnboardingBtn');
 const shortcutHint = document.getElementById('shortcutHint');
 const closeHint = document.getElementById('closeHint');
 
+// Support Elements
+const githubBtn = document.getElementById('githubBtn');
+const showCryptoBtn = document.getElementById('showCryptoBtn');
+const cryptoContainer = document.getElementById('cryptoContainer');
+
 // State
 let currentTab = null;
 let storageKey = null;
 let allNotes = [];
 let allTabs = [];
 
-// Initialize
+// ============================================
+// HELPER: SAFE URL PARSING (Fixes the Edge Error)
+// ============================================
+function getHostnameSafe(urlString) {
+  if (!urlString) return 'Unknown Page';
+  try {
+    return new URL(urlString).hostname;
+  } catch (e) {
+    // If URL is invalid (e.g. edge:// or about:blank), return the raw string or a fallback
+    return urlString.startsWith('edge://') ? 'Edge System Page' : 
+           urlString.startsWith('chrome://') ? 'Chrome System Page' : 
+           'System Page';
+  }
+}
+
+// ============================================
+// INITIALIZATION
+// ============================================
 async function init() {
   try {
     // Check if first time user
@@ -58,9 +80,10 @@ async function init() {
     // Generate storage key
     storageKey = generateStorageKey(tab.windowId, tab.id);
     
-    // Display tab info
+    // Display tab info (WITH SAFE URL PARSING)
     tabTitle.textContent = tab.title || 'Untitled';
-    tabUrl.textContent = new URL(tab.url).hostname;
+    tabUrl.textContent = getHostnameSafe(tab.url);
+    
     if (tab.favIconUrl) {
       tabFavicon.src = tab.favIconUrl;
       tabFavicon.style.display = 'block';
@@ -322,7 +345,8 @@ function renderDashboard(filterText = '') {
 
 // Create individual note card HTML
 function createNoteCard(note) {
-  const hostname = new URL(note.url).hostname;
+  // USE SAFETY CHECK HERE
+  const hostname = getHostnameSafe(note.url); 
   const timeAgo = formatTimeAgo(note.created);
   
   return `
@@ -542,7 +566,7 @@ async function exportNotes() {
   try {
     const exportData = {
       exported: new Date().toISOString(),
-      version: '1.1.0',
+      version: '1.2.0',
       notes: allNotes.map(note => ({
         title: note.title,
         url: note.url,
@@ -691,7 +715,42 @@ configureShortcutBtn.addEventListener('click', openShortcutsPage);
 
 closeHint.addEventListener('click', hideShortcutHint);
 
-// Handle favicon load errors (CSP-compliant replacement for inline onerror)
+// Support & Crypto Listeners
+if (githubBtn) {
+  githubBtn.addEventListener('click', () => {
+    // CORRECTED REPO URL
+    chrome.tabs.create({ url: 'https://github.com/raidenOP1/why-am-i-here-' });
+  });
+}
+
+if (showCryptoBtn) {
+  showCryptoBtn.addEventListener('click', () => {
+    cryptoContainer.classList.toggle('hidden');
+  });
+}
+
+document.querySelectorAll('.btn-copy').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.dataset.target;
+    const input = document.getElementById(targetId);
+    
+    // Select & Copy
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => {
+      // Visual Feedback
+      const originalText = btn.textContent;
+      btn.textContent = '✓';
+      btn.classList.add('copied');
+      
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  });
+});
+
+// Handle favicon load errors
 tabFavicon.addEventListener('error', () => {
   tabFavicon.style.display = 'none';
 });
