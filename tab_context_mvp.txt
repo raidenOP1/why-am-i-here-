@@ -1,0 +1,873 @@
+# Tab Context MVP - Complete Project Structure
+
+## Directory Structure
+
+```
+tab-context-mvp/
+├── manifest.json
+├── background.js
+├── popup.html
+├── popup.js
+├── utils.js
+├── styles.css
+└── icons/
+    ├── icon-16.png
+    ├── icon-48.png
+    └── icon-128.png
+```
+
+---
+
+## manifest.json
+
+```json
+{
+  "manifest_version": 3,
+  "name": "Why Am I Here?",
+  "version": "1.0.0",
+  "description": "Remember why you opened each tab. Zero tracking, local-only.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "contextMenus",
+    "notifications"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Open tab note editor"
+    }
+  }
+}
+```
+
+---
+
+## background.js
+
+```javascript
+import { generateStorageKey, generateHashKey, debounce } from './utils.js';
+
+// State
+let settings = {
+  notificationsEnabled: false
+};
+
+// Initialize
+chrome.runtime.onInstalled.addListener(async () => {
+  // Create context menu
+  chrome.contextMenus.create({
+    id: 'add-tab-note',
+    title: 'Add note to this tab',
+    contexts: ['page']
+  });
+
+  // Load settings
+  const stored = await chrome.storage.local.get('settings');
+  if (stored.settings) {
+    settings = stored.settings;
+  }
+});
+
+// Tab Activated - Show badge and notification
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  const { tabId, windowId } = activeInfo;
+  const key = generateStorageKey(windowId, tabId);
+  
+  try {
+    // Check session storage for note
+    const result = await chrome.storage.session.get(key);
+    
+    if (result[key]) {
+      const note = result[key];
+      
+      // Set badge
+      await chrome.action.setBadgeText({ 
+        text: '!', 
+        tabId: tabId 
+      });
+      await chrome.action.setBadgeBackgroundColor({ 
+        color: '#4285f4', 
+        tabId: tabId 
+      });
+      
+      // Optional notification
+      if (settings.notificationsEnabled) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon-128.png',
+          title: 'Tab Note',
+          message: note.text,
+          silent: true,
+          requireInteraction: false
+        });
+      }
+    } else {
+      // Clear badge
+      await chrome.action.setBadgeText({ text: '', tabId: tabId });
+    }
+  } catch (err) {
+    console.error('Error in onActivated:', err);
+  }
+});
+
+// Tab Created - Handle duplication and crash recovery
+chrome.tabs.onCreated.addListener(async (tab) => {
+  const { id: tabId, windowId, openerTabId, url } = tab;
+  
+  // Handle tab duplication (copy parent note)
+  if (openerTabId) {
+    const parentKey = generateStorageKey(windowId, openerTabId);
+    const parentResult = await chrome.storage.session.get(parentKey);
+    
+    if (parentResult[parentKey]) {
+      const childKey = generateStorageKey(windowId, tabId);
+      const copiedNote = {
+        text: `[COPY] ${parentResult[parentKey].text}`,
+        created: Date.now(),
+        url: url
+      };
+      
+      await chrome.storage.session.set({ [childKey]: copiedNote });
+      await chrome.action.setBadgeText({ text: '!', tabId: tabId });
+    }
+  }
+  
+  // Crash recovery - check if URL has backup
+  if (url && !url.startsWith('chrome://') && !url.startsWith('chrome-extension://')) {
+    const hashKey = await generateHashKey(url);
+    const backupResult = await chrome.storage.local.get(hashKey);
+    
+    if (backupResult[hashKey]) {
+      const sessionKey = generateStorageKey(windowId, tabId);
+      await chrome.storage.session.set({ 
+        [sessionKey]: backupResult[hashKey] 
+      });
+      await chrome.action.setBadgeText({ text: '!', tabId: tabId });
+    }
+  }
+});
+
+// Tab Removed - Cleanup
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+  const { windowId } = removeInfo;
+  const key = generateStorageKey(windowId, tabId);
+  
+  await chrome.storage.session.remove(key);
+});
+
+// Tab Updated - Handle URL changes
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.url) {
+    const { windowId, url } = tab;
+    const sessionKey = generateStorageKey(windowId, tabId);
+    
+    // Check if note exists for old URL
+    const result = await chrome.storage.session.get(sessionKey);
+    if (result[sessionKey]) {
+      // Update URL in note
+      result[sessionKey].url = url;
+      await chrome.storage.session.set({ [sessionKey]: result[sessionKey] });
+      
+      // Update backup
+      const hashKey = await generateHashKey(url);
+      await chrome.storage.local.set({ [hashKey]: result[sessionKey] });
+    }
+  }
+});
+
+// Context Menu Click
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'add-tab-note') {
+    chrome.action.openPopup();
+  }
+});
+
+// Message handler for settings updates
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'updateSettings') {
+    settings = request.settings;
+    chrome.storage.local.set({ settings: settings });
+    sendResponse({ success: true });
+  }
+  return true;
+});
+```
+
+---
+
+## popup.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tab Note</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Why Am I Here?</h1>
+      <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
+    </header>
+
+    <div id="mainView">
+      <div class="tab-info">
+        <span id="tabTitle" class="tab-title">Loading...</span>
+      </div>
+      
+      <textarea 
+        id="noteInput" 
+        placeholder="Type your note here... (Why did you open this tab?)"
+        maxlength="500"
+        rows="6"
+      ></textarea>
+      
+      <div class="footer">
+        <span id="charCount" class="char-count">0/500</span>
+        <div class="actions">
+          <button id="clearBtn" class="btn btn-secondary">Clear</button>
+          <button id="deleteBtn" class="btn btn-danger">Delete</button>
+        </div>
+      </div>
+      
+      <div class="status" id="status"></div>
+    </div>
+
+    <div id="settingsView" class="hidden">
+      <h2>Settings</h2>
+      
+      <div class="setting-item">
+        <label>
+          <input type="checkbox" id="notificationsToggle">
+          <span>Enable notification reminders</span>
+        </label>
+        <p class="setting-description">
+          Show a system notification when switching to tabs with notes
+        </p>
+      </div>
+
+      <div class="setting-item">
+        <button id="clearAllBtn" class="btn btn-danger">Clear All Notes</button>
+        <p class="setting-description">
+          Delete all notes from all tabs (cannot be undone)
+        </p>
+      </div>
+
+      <div class="setting-item">
+        <button id="exportBtn" class="btn btn-secondary">Export Notes</button>
+        <p class="setting-description">
+          Download all notes as JSON file
+        </p>
+      </div>
+
+      <button id="backBtn" class="btn btn-primary">← Back</button>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
+```
+
+---
+
+## popup.js
+
+```javascript
+import { generateStorageKey, generateHashKey, debounce } from './utils.js';
+
+// DOM Elements
+const noteInput = document.getElementById('noteInput');
+const charCount = document.getElementById('charCount');
+const tabTitle = document.getElementById('tabTitle');
+const clearBtn = document.getElementById('clearBtn');
+const deleteBtn = document.getElementById('deleteBtn');
+const status = document.getElementById('status');
+const settingsBtn = document.getElementById('settingsBtn');
+const mainView = document.getElementById('mainView');
+const settingsView = document.getElementById('settingsView');
+const backBtn = document.getElementById('backBtn');
+const notificationsToggle = document.getElementById('notificationsToggle');
+const clearAllBtn = document.getElementById('clearAllBtn');
+const exportBtn = document.getElementById('exportBtn');
+
+// State
+let currentTab = null;
+let storageKey = null;
+
+// Initialize
+async function init() {
+  try {
+    // Get current tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    currentTab = tab;
+    
+    // Generate storage key
+    storageKey = generateStorageKey(tab.windowId, tab.id);
+    
+    // Display tab title
+    tabTitle.textContent = tab.title || tab.url;
+    
+    // Load existing note
+    const result = await chrome.storage.session.get(storageKey);
+    if (result[storageKey]) {
+      noteInput.value = result[storageKey].text;
+      updateCharCount();
+    }
+    
+    // Load settings
+    const settingsResult = await chrome.storage.local.get('settings');
+    if (settingsResult.settings) {
+      notificationsToggle.checked = settingsResult.settings.notificationsEnabled || false;
+    }
+    
+    // Focus input
+    noteInput.focus();
+    
+  } catch (err) {
+    console.error('Init error:', err);
+    showStatus('Error loading note', 'error');
+  }
+}
+
+// Save note (debounced)
+const saveNote = debounce(async () => {
+  const text = noteInput.value.trim();
+  
+  if (!text) {
+    await deleteNote();
+    return;
+  }
+  
+  try {
+    const note = {
+      text: text,
+      created: Date.now(),
+      url: currentTab.url
+    };
+    
+    // Save to session storage
+    await chrome.storage.session.set({ [storageKey]: note });
+    
+    // Backup to local storage (hash key for crash recovery)
+    const hashKey = await generateHashKey(currentTab.url);
+    await chrome.storage.local.set({ [hashKey]: note });
+    
+    // Update badge
+    await chrome.action.setBadgeText({ 
+      text: '!', 
+      tabId: currentTab.id 
+    });
+    await chrome.action.setBadgeBackgroundColor({ 
+      color: '#4285f4', 
+      tabId: currentTab.id 
+    });
+    
+    showStatus('Saved', 'success');
+    
+  } catch (err) {
+    console.error('Save error:', err);
+    showStatus('Save failed', 'error');
+  }
+}, 1000);
+
+// Delete note
+async function deleteNote() {
+  try {
+    // Remove from session storage
+    await chrome.storage.session.remove(storageKey);
+    
+    // Remove from local storage backup
+    const hashKey = await generateHashKey(currentTab.url);
+    await chrome.storage.local.remove(hashKey);
+    
+    // Clear badge
+    await chrome.action.setBadgeText({ text: '', tabId: currentTab.id });
+    
+    // Clear input
+    noteInput.value = '';
+    updateCharCount();
+    
+    showStatus('Deleted', 'success');
+    
+  } catch (err) {
+    console.error('Delete error:', err);
+    showStatus('Delete failed', 'error');
+  }
+}
+
+// Update character count
+function updateCharCount() {
+  const count = noteInput.value.length;
+  charCount.textContent = `${count}/500`;
+  
+  if (count > 450) {
+    charCount.style.color = '#ea4335';
+  } else {
+    charCount.style.color = '#5f6368';
+  }
+}
+
+// Show status message
+function showStatus(message, type) {
+  status.textContent = message;
+  status.className = `status ${type}`;
+  status.style.display = 'block';
+  
+  setTimeout(() => {
+    status.style.display = 'none';
+  }, 2000);
+}
+
+// Toggle settings view
+function showSettings() {
+  mainView.classList.add('hidden');
+  settingsView.classList.remove('hidden');
+}
+
+function showMain() {
+  settingsView.classList.add('hidden');
+  mainView.classList.remove('hidden');
+}
+
+// Clear all notes
+async function clearAllNotes() {
+  if (!confirm('Delete all notes from all tabs? This cannot be undone.')) {
+    return;
+  }
+  
+  try {
+    await chrome.storage.session.clear();
+    await chrome.storage.local.clear();
+    
+    // Clear all badges
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      await chrome.action.setBadgeText({ text: '', tabId: tab.id });
+    }
+    
+    noteInput.value = '';
+    updateCharCount();
+    showStatus('All notes cleared', 'success');
+    
+  } catch (err) {
+    console.error('Clear all error:', err);
+    showStatus('Clear failed', 'error');
+  }
+}
+
+// Export notes
+async function exportNotes() {
+  try {
+    const sessionData = await chrome.storage.session.get(null);
+    const localData = await chrome.storage.local.get(null);
+    
+    const exportData = {
+      exported: new Date().toISOString(),
+      sessionNotes: sessionData,
+      backupNotes: localData
+    };
+    
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tab-notes-${Date.now()}.json`;
+    link.click();
+    
+    showStatus('Exported', 'success');
+    
+  } catch (err) {
+    console.error('Export error:', err);
+    showStatus('Export failed', 'error');
+  }
+}
+
+// Update settings
+async function updateSettings() {
+  const settings = {
+    notificationsEnabled: notificationsToggle.checked
+  };
+  
+  await chrome.storage.local.set({ settings: settings });
+  
+  // Notify background script
+  chrome.runtime.sendMessage({ 
+    type: 'updateSettings', 
+    settings: settings 
+  });
+  
+  showStatus('Settings saved', 'success');
+}
+
+// Event Listeners
+noteInput.addEventListener('input', () => {
+  updateCharCount();
+  saveNote();
+});
+
+clearBtn.addEventListener('click', () => {
+  noteInput.value = '';
+  updateCharCount();
+  saveNote();
+});
+
+deleteBtn.addEventListener('click', deleteNote);
+
+settingsBtn.addEventListener('click', showSettings);
+backBtn.addEventListener('click', showMain);
+
+notificationsToggle.addEventListener('change', updateSettings);
+clearAllBtn.addEventListener('click', clearAllNotes);
+exportBtn.addEventListener('click', exportNotes);
+
+// Initialize on load
+init();
+```
+
+---
+
+## utils.js
+
+```javascript
+/**
+ * Generate storage key for session storage
+ * Format: w{windowId}-t{tabId}
+ */
+export function generateStorageKey(windowId, tabId) {
+  return `w${windowId}-t${tabId}`;
+}
+
+/**
+ * Generate hash key for local storage backup
+ * Uses SHA-256 hash of sanitized URL
+ */
+export async function generateHashKey(url) {
+  try {
+    // Sanitize URL (strip query params and fragments)
+    const urlObj = new URL(url);
+    const sanitized = `${urlObj.origin}${urlObj.pathname}`;
+    
+    // Generate SHA-256 hash
+    const encoder = new TextEncoder();
+    const data = encoder.encode(sanitized);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    return `url_${hashHex.substring(0, 32)}`;
+  } catch (err) {
+    console.error('Hash generation error:', err);
+    // Fallback to simple hash
+    return `url_${btoa(url).substring(0, 32)}`;
+  }
+}
+
+/**
+ * Debounce function
+ * Delays execution until after wait milliseconds have elapsed
+ */
+export function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+/**
+ * Parse storage key to extract windowId and tabId
+ */
+export function parseStorageKey(key) {
+  const match = key.match(/^w(\d+)-t(\d+)$/);
+  if (!match) return null;
+  
+  return {
+    windowId: parseInt(match[1], 10),
+    tabId: parseInt(match[2], 10)
+  };
+}
+```
+
+---
+
+## styles.css
+
+```css
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 400px;
+  min-height: 300px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 14px;
+  color: #202124;
+  background: #ffffff;
+}
+
+.container {
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e8eaed;
+}
+
+h1 {
+  font-size: 18px;
+  font-weight: 500;
+  color: #202124;
+}
+
+h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.icon-btn:hover {
+  background: #f1f3f4;
+}
+
+.tab-info {
+  margin-bottom: 12px;
+}
+
+.tab-title {
+  font-size: 12px;
+  color: #5f6368;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 120px;
+  transition: border-color 0.2s;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: #4285f4;
+}
+
+textarea::placeholder {
+  color: #9aa0a6;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.char-count {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #4285f4;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #3367d6;
+}
+
+.btn-secondary {
+  background: #f1f3f4;
+  color: #202124;
+}
+
+.btn-secondary:hover {
+  background: #e8eaed;
+}
+
+.btn-danger {
+  background: #ea4335;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #d33b2c;
+}
+
+.status {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+  display: none;
+}
+
+.status.success {
+  background: #e6f4ea;
+  color: #137333;
+}
+
+.status.error {
+  background: #fce8e6;
+  color: #c5221f;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Settings View */
+.setting-item {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.setting-item:last-of-type {
+  border-bottom: none;
+}
+
+.setting-item label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.setting-item input[type="checkbox"] {
+  margin-right: 8px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.setting-description {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #5f6368;
+  line-height: 1.4;
+}
+
+/* Badge Styles (for Chrome) */
+.badge {
+  background: #4285f4;
+  color: white;
+  font-weight: bold;
+}
+```
+
+---
+
+## Installation Instructions
+
+1. **Prepare Icons:**
+   - Create 16x16, 48x48, and 128x128 PNG icons
+   - Place in `icons/` directory
+
+2. **Load Extension:**
+   - Open Chrome/Edge: `chrome://extensions/`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select the `tab-context-mvp/` folder
+
+3. **Test:**
+   - Open a new tab
+   - Press `Ctrl+Shift+E` (or `Cmd+Shift+E` on Mac)
+   - Type a note
+   - Switch to another tab and back - badge should appear
+
+4. **Optional:**
+   - Enable notifications in settings for toast reminders
+
+---
+
+## Technical Notes
+
+- **Zero Content Scripts:** All UI in popup, no page injection
+- **Storage:** Session primary (in-memory), Local backup (crash recovery)
+- **Permissions:** Minimal - no host permissions required
+- **Performance:** Debounced saves (1000ms), efficient event handlers
+- **Privacy:** All data local, no network requests
+- **Compatibility:** Chrome 114+, Edge 114+
+
+## Known Limitations
+
+- Notes do not persist if user intentionally closes browser (by design)
+- System notifications may be blocked by OS Focus modes
+- PDF viewer tabs and `chrome://` pages cannot be injected (popup works everywhere)
+
+---
+
+**Status:** ✅ READY FOR DEPLOYMENT

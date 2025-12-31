@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tab Notes</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-left">
+        <h1>Why Am I Here?</h1>
+        <span class="tab-count" id="tabCount">0 notes</span>
+      </div>
+      <button id="settingsBtn" class="icon-btn" title="Settings">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M16.5 10a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="view-toggle">
+      <button class="toggle-btn active" data-view="current" id="currentTabBtn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M2 6h12" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+        Current Tab
+      </button>
+      <button class="toggle-btn" data-view="all" id="allTabsBtn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="2" y="2" width="12" height="3" rx="1" stroke="currentColor" stroke-width="1.5"/>
+          <rect x="2" y="6.5" width="12" height="3" rx="1" stroke="currentColor" stroke-width="1.5"/>
+          <rect x="2" y="11" width="12" height="3" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+        All Tabs
+      </button>
+    </div>
+
+    <div id="currentView" class="view-content active">
+      <div class="shortcut-hint" id="shortcutHint">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <rect x="2" y="3" width="10" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M5 6h4M5 8h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        <span>Quick access: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></span>
+        <button class="hint-close" id="closeHint">×</button>
+      </div>
+
+      <div class="current-tab-card">
+        <div class="tab-info">
+          <div class="tab-favicon">
+            <img id="tabFavicon" src="" alt="">
+          </div>
+          <div class="tab-details">
+            <span id="tabTitle" class="tab-title">Loading...</span>
+            <span id="tabUrl" class="tab-url">...</span>
+          </div>
+        </div>
+        
+        <textarea 
+          id="noteInput" 
+          placeholder="What's this tab for? Add a quick note..."
+          maxlength="500"
+          rows="4"
+        ></textarea>
+        
+        <div class="footer">
+          <div class="footer-left">
+            <span id="saveIndicator" class="save-indicator"></span>
+            <span id="charCount" class="char-count">0/500</span>
+          </div>
+          <div class="actions">
+            <button id="clearBtn" class="btn btn-ghost">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              Clear
+            </button>
+            <button id="deleteBtn" class="btn btn-danger">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M3 4h10M6.5 4V3a1 1 0 011-1h1a1 1 0 011 1v1M5 4v8a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="status" id="status"></div>
+    </div>
+
+    <div id="allTabsView" class="view-content">
+      <div class="dashboard-header">
+        <input 
+          type="text" 
+          id="searchInput" 
+          class="search-input" 
+          placeholder="Search notes..."
+        >
+      </div>
+
+      <div id="notesContainer" class="notes-container"></div>
+
+      <div class="empty-state" id="emptyState">
+        <img src="assets/confused-user.png" 
+             alt="Person wondering about browser tabs" 
+             class="empty-state-illustration">
+        <h3>No notes yet</h3>
+        <p>Switch to "Current Tab" to add your first note</p>
+      </div>
+    </div>
+
+    <div id="settingsView" class="view-content">
+      <div class="settings-header">
+        <button id="backBtn" class="back-btn">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Back
+        </button>
+        <h2>Settings</h2>
+      </div>
+      
+      <div class="settings-content">
+        <div class="setting-item">
+          <div class="setting-header">
+            <label class="switch">
+              <input type="checkbox" id="notificationsToggle">
+              <span class="slider"></span>
+            </label>
+            <div class="setting-text">
+              <h3>Notification reminders</h3>
+              <p>Show a notification when switching to tabs with notes</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-divider"></div>
+
+        <div class="setting-item">
+          <h3>Data Management</h3>
+          <button id="exportBtn" class="btn btn-secondary full-width">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v8M5 8l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Export All Notes
+          </button>
+          <p class="setting-description">Download notes as JSON file</p>
+        </div>
+
+        <div class="setting-item">
+          <button id="clearAllBtn" class="btn btn-danger full-width">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M3 4h10M6.5 4V3a1 1 0 011-1h1a1 1 0 011 1v1M5 4v8a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Clear All Notes
+          </button>
+          <p class="setting-description">Delete all notes from all tabs (cannot be undone)</p>
+        </div>
+
+        <div class="setting-divider"></div>
+
+        <div class="setting-item">
+          <h3>Keyboard Shortcut</h3>
+          <div class="shortcut-config">
+            <div class="shortcut-display">
+              <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd>
+              <span class="shortcut-mac">(⌘ + ⇧ + E on Mac)</span>
+            </div>
+            <button id="configureShortcutBtn" class="btn btn-secondary full-width">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              Configure Keyboard Shortcut
+            </button>
+            <p class="setting-description">
+              Opens this popup instantly. Click above to set or change your shortcut in Chrome settings.
+            </p>
+          </div>
+        </div>
+
+        <div class="setting-divider"></div>
+
+        <div class="setting-item">
+          <h3>About</h3>
+          <div class="about-info">
+            <p><strong>Version:</strong> 1.1.0</p>
+            <p><strong>Privacy:</strong> All data stored locally</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="onboardingModal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Welcome to Why Am I Here? 👋</h2>
+        </div>
+        <div class="modal-body">
+          <div class="onboarding-step">
+            <div class="step-icon">⌨️</div>
+            <h3>Quick Access Shortcut</h3>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> anytime to open this popup</p>
+            <p class="step-note">⚠️ <strong>Important:</strong> You need to configure this shortcut first!</p>
+          </div>
+          
+          <div class="onboarding-step">
+            <div class="step-icon">📝</div>
+            <h3>Add Notes to Tabs</h3>
+            <p>Type why you opened a tab so you never forget the context</p>
+          </div>
+          
+          <div class="onboarding-step">
+            <div class="step-icon">📊</div>
+            <h3>View All Notes</h3>
+            <p>Click "All Tabs" to see your dashboard and jump to any tab</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="setupShortcutBtn" class="btn btn-primary full-width">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Setup Keyboard Shortcut Now
+          </button>
+          <button id="skipOnboardingBtn" class="btn btn-ghost full-width">
+            Skip for now
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
