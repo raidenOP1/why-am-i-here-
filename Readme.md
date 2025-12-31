@@ -38,7 +38,7 @@ When doing deep research, you often end up with 20+ tabs open. Returning to them
 5.  Select the folder containing this code.
 
 ![Extension Screenshot](assets/screenshot-demo.png)
-*(Note: Add a screenshot of your popup here and name it screenshot-demo.png)*
+
 
 
 ## 🤝 Support Development
@@ -72,3 +72,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **Made with ❤️ by [RaidenOP1](https://github.com/raidenOP1)**
+
